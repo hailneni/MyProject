@@ -1,76 +1,132 @@
 package com.example.myproject;
 
+import android.app.AlertDialog;
+import android.content.ContentValues;
+import android.content.DialogInterface;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
-
-import com.google.android.material.snackbar.Snackbar;
+import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.widget.ArrayAdapter;
+import android.widget.EditText;
+import android.widget.ListView;
+import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import android.view.View;
+import com.example.myproject.db.TaskContract;
+import com.example.myproject.db.TaskDbHelper;
 
-import androidx.navigation.NavController;
-import androidx.navigation.Navigation;
-import androidx.navigation.ui.AppBarConfiguration;
-import androidx.navigation.ui.NavigationUI;
-
-import com.example.myproject.databinding.ActivityMainBinding;
-
-import android.view.Menu;
-import android.view.MenuItem;
+import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
-
-    private AppBarConfiguration appBarConfiguration;
-    private ActivityMainBinding binding;
+    final String TAG = "Main Activity";
+    private TaskDbHelper mHelper;
+    private ListView mTaskListView;
+   private ArrayAdapter<String> mAdapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+
         super.onCreate(savedInstanceState);
-
-        binding = ActivityMainBinding.inflate(getLayoutInflater());
-        setContentView(binding.getRoot());
-
-        setSupportActionBar(binding.toolbar);
-
-        NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
-        appBarConfiguration = new AppBarConfiguration.Builder(navController.getGraph()).build();
-        NavigationUI.setupActionBarWithNavController(this, navController, appBarConfiguration);
-
-        binding.fab.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
-            }
-        });
+        setContentView(R.layout.activity_main);
+        init();
+        updateUI();
     }
+    void init()
+
+    {
+        mHelper = new TaskDbHelper(this);
+        mTaskListView = (ListView) findViewById(R.id.list_todo);
+    }
+
+    private void updateUI() {
+        ArrayList<String> taskList = new ArrayList<>();
+        SQLiteDatabase db = mHelper.getReadableDatabase();
+        Cursor cursor = db.query(TaskContract.TaskEntry.TABLE,
+                new String[]{TaskContract.TaskEntry._ID, TaskContract.TaskEntry.COL_TASK_TITLE},
+                null, null, null, null, null);
+        while (cursor.moveToNext()) {
+            int idx = cursor.getColumnIndex(TaskContract.TaskEntry.COL_TASK_TITLE);
+            taskList.add(cursor.getString(idx));
+        }
+
+        if (mAdapter == null) {
+            mAdapter = new ArrayAdapter<>(this,
+                    R.layout.item_todo,
+                    R.id.task_title,
+                    taskList);
+            mTaskListView.setAdapter(mAdapter);
+        } else {
+            mAdapter.clear();
+            mAdapter.addAll(taskList);
+            mAdapter.notifyDataSetChanged();
+        }
+
+        cursor.close();
+        db.close();
+    }
+
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
+        getMenuInflater().inflate(R.menu.main_menu, menu);
+        return super.onCreateOptionsMenu(menu);
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
+        switch (item.getItemId()) {
+            case R.id.action_add_task:
+                //Log.d(TAG, "Add a new task");
 
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
+                final EditText taskEditText = new EditText(this);
+                AlertDialog dialog = new AlertDialog.Builder(this)
+                        .setTitle("Add a new task")
+                        .setMessage("What do you want to do next?")
+                        .setView(taskEditText)
+                        .setPositiveButton("Add", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                String task = String.valueOf(taskEditText.getText().toString());
+                                Log.d(TAG, "Task to add: " + task);
+
+                                SQLiteDatabase db = mHelper.getWritableDatabase();
+                                ContentValues values = new ContentValues();
+                                values.put(TaskContract.TaskEntry.COL_TASK_TITLE, task);
+                                db.insertWithOnConflict(TaskContract.TaskEntry.TABLE,
+                                        null,
+                                        values,
+                                        SQLiteDatabase.CONFLICT_REPLACE);
+                                db.close();
+                                updateUI();
+
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .create();
+                dialog.show();
+
+                return true;
+
+            default:
+                return super.onOptionsItemSelected(item);
         }
-
-        return super.onOptionsItemSelected(item);
     }
 
-    @Override
-    public boolean onSupportNavigateUp() {
-        NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
-        return NavigationUI.navigateUp(navController, appBarConfiguration)
-                || super.onSupportNavigateUp();
+    public void deleteTask(View view){
+        View parent = (View) view.getParent();
+        TextView taskTextView = (TextView) parent.findViewById(R.id.task_title);
+        String task = String.valueOf(taskTextView.getText());
+        SQLiteDatabase db = mHelper.getWritableDatabase();
+        db.delete(TaskContract.TaskEntry.TABLE,
+                TaskContract.TaskEntry.COL_TASK_TITLE + " = ?",
+                new String[]{task});
+        db.close();
+        updateUI();
     }
+
 }
